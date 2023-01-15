@@ -43,7 +43,7 @@ async fn redirect(query: web::Query<RedirectQuery>) -> HttpResponse {
     let (path, file_name) = parsed_url.rsplit_once("/").unwrap();
 
     return HttpResponse::MovedPermanently()
-        .append_header((header::LOCATION, format!("http://localhost:8000/file/{}/{}", encode(path), file_name)))
+        .append_header((header::LOCATION, format!("https://proxy.nade.me/file/{}/{}", encode(path), file_name)))
         .finish()
 }
 
