@@ -35,8 +35,6 @@ async fn redirect(query: web::Query<RedirectQuery>) -> HttpResponse {
     let decoded_url = decode(raw_url).expect("UTF-8");
     let url = RustUrl::parse(&*decoded_url);
 
-    println!("{}", url.is_err());
-
     if url.is_err() {
         return HttpResponse::BadRequest()
             .body(format!("A valid URL needs to be supplied. {}", url.err().unwrap()));
