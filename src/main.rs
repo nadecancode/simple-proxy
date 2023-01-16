@@ -36,13 +36,6 @@ async fn index() -> &'static str {
 
 #[get("/redirect")]
 async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpResponse {
-    let host = req.uri().host();
-
-    if !cfg!(test) && (host.is_none() || host.unwrap() != PROXY_HOST_NAME) {
-        return HttpResponse::Forbidden()
-            .body("Please access this via host name only.");
-    }
-
     let raw_url = &query.url;
     if raw_url == "" {
         return HttpResponse::BadRequest()
@@ -75,11 +68,6 @@ async fn proxy_options(_req: HttpRequest) -> HttpResponse {
 async fn proxy(req: HttpRequest) -> HttpResponse {
     let host = req.uri().host();
 
-    if !cfg!(test) && (host.is_none() || host.unwrap() != PROXY_HOST_NAME) {
-        return HttpResponse::Forbidden()
-            .body("Please access this via host name only.");
-    }
-
     let raw_meta = req.match_info().query("meta");
     let mut supplied_meta = decode(raw_meta).expect("UTF-8");
     let file = req.match_info().get("file").unwrap();
@@ -111,7 +99,7 @@ async fn main() -> std::io::Result<()> {
         .service(redirect)
         .wrap(Cors::default().allow_any_origin().allow_any_header().allow_any_method().supports_credentials())
     )
-        .bind(("0.0.0.0", 8000))?
+        .bind((if !cfg!(test) { "0.0.0.0" } else { "127.0.0.1" }, 8000))?
         .run()
         .await
 }
