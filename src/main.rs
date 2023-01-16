@@ -13,6 +13,7 @@ use serde::Deserialize;
 pub struct CORS;
 
 static USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36";
+static PROXY_HOST_NAME: &str = "proxy.nade.me";
 
 #[get("/")]
 async fn index() -> &'static str {
@@ -26,6 +27,13 @@ struct RedirectQuery {
 
 #[get("/redirect")]
 async fn redirect(query: web::Query<RedirectQuery>) -> HttpResponse {
+    let host = req.uri().host();
+
+    if !cfg!(test) && (host.is_none() || host.unwrap() != PROXY_HOST_NAME) {
+        return HttpResponse::Forbidden()
+            .body("Please access this via host name only.");
+    }
+
     let raw_url = &query.url;
     if raw_url == "" {
         return HttpResponse::BadRequest()
@@ -44,7 +52,7 @@ async fn redirect(query: web::Query<RedirectQuery>) -> HttpResponse {
     let (path, file_name) = parsed_url.rsplit_once("/").unwrap();
 
     return HttpResponse::MovedPermanently()
-        .append_header((header::LOCATION, format!("https://proxy.nade.me/file/{}/{}", encode(path), file_name)))
+        .append_header((header::LOCATION, format!("{}/file/{}/{}", if cfg!(test) { "http://localhost:8000" } else { "https://" + PROXY_HOST_NAME }, encode(path), file_name)))
         .finish()
 }
 
@@ -56,6 +64,13 @@ async fn proxy_options(_req: HttpRequest) -> HttpResponse {
 
 #[get("/file/{meta}/{file}")]
 async fn proxy(req: HttpRequest) -> HttpResponse {
+    let host = req.uri().host();
+
+    if !cfg!(test) && (host.is_none() || host.unwrap() != PROXY_HOST_NAME) {
+        return HttpResponse::Forbidden()
+            .body("Please access this via host name only.");
+    }
+
     let raw_meta = req.match_info().query("meta");
     let mut supplied_meta = decode(raw_meta).expect("UTF-8");
     let file = req.match_info().get("file").unwrap();
