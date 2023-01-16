@@ -112,7 +112,6 @@ async fn main() -> std::io::Result<()> {
         .wrap(Cors::default().allow_any_origin().allow_any_header().allow_any_method().supports_credentials())
     )
         .bind(("0.0.0.0", 8000))?
-        .bind(("127.0.0.1", 8000))?
         .run()
         .await
 }
