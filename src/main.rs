@@ -26,7 +26,7 @@ struct RedirectQuery {
 }
 
 #[get("/redirect")]
-async fn redirect(query: web::Query<RedirectQuery>) -> HttpResponse {
+async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpResponse {
     let host = req.uri().host();
 
     if !cfg!(test) && (host.is_none() || host.unwrap() != PROXY_HOST_NAME) {
@@ -52,7 +52,7 @@ async fn redirect(query: web::Query<RedirectQuery>) -> HttpResponse {
     let (path, file_name) = parsed_url.rsplit_once("/").unwrap();
 
     return HttpResponse::MovedPermanently()
-        .append_header((header::LOCATION, format!("{}/file/{}/{}", if cfg!(test) { "http://localhost:8000" } else { "https://" + PROXY_HOST_NAME }, encode(path), file_name)))
+        .append_header((header::LOCATION, format!("{}/file/{}/{}", if cfg!(test) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }, encode(path), file_name)))
         .finish()
 }
 
