@@ -2,27 +2,36 @@ use std::fmt::format;
 use std::str::FromStr;
 use std::time::Duration;
 use actix_cors::Cors;
-use actix_web::{get, web, Result, options, HttpRequest, HttpResponse};
+use actix_web::{get, guard::Host, web, Result, options, HttpRequest, Handler, Responder};
 use actix_web::http::header;
 use actix_web::web::resource;
-use reqwest::{ClientBuilder, Url, header as request_header};
+use reqwest::{ClientBuilder, Url, header as request_header, Method};
 use urlencoding::{decode, encode};
-use url::Url as RustUrl;
+use url::{Host, Url as RustUrl};
 use serde::Deserialize;
+use futures::future::LocalBoxFuture;
+use actix_web::{
+    body::EitherBody,
+    dev::{self, Service, ServiceRequest, ServiceResponse, Transform},
+    http, Error, HttpResponse,
+};
+use actix_web::body::{BoxBody, MessageBody};
+use actix_web_lab::middleware::{from_fn, Next};
+use std::any::Any;
 
 pub struct CORS;
 
 static USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36";
 static PROXY_HOST_NAME: &str = "proxy.nade.me";
 
-#[get("/")]
-async fn index() -> &'static str {
-    "こんにちわ"
-}
-
 #[derive(Deserialize)]
 struct RedirectQuery {
     url: String,
+}
+
+#[get("/")]
+async fn index() -> &'static str {
+    "こんにちわ"
 }
 
 #[get("/redirect")]
@@ -96,12 +105,13 @@ async fn main() -> std::io::Result<()> {
     use actix_web::{App, HttpServer};
 
     HttpServer::new(|| App::new()
-        .wrap(Cors::default().allow_any_origin().allow_any_header().allow_any_method().supports_credentials())
         .service(index)
         .service(proxy)
+        .service(proxy_options)
         .service(redirect)
+        .wrap(Cors::default().allow_any_origin().allow_any_header().allow_any_method().supports_credentials())
     )
-        .bind(("0.0.0.0", 80))?
+        .bind(("0.0.0.0", 8000))?
         .bind(("127.0.0.1", 8000))?
         .run()
         .await
