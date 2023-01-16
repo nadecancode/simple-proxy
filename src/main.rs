@@ -81,7 +81,7 @@ async fn main() -> std::io::Result<()> {
     use actix_web::{App, HttpServer};
 
     HttpServer::new(|| App::new()
-        .wrap(Cors::default().allow_any_origin().supports_credentials())
+        .wrap(Cors::default().allow_any_origin().allow_any_header().allow_any_method().supports_credentials())
         .service(index)
         .service(proxy)
         .service(redirect)
