@@ -30,7 +30,7 @@ static PROXY_HOST_NAME: &str = "proxy.nade.me";
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     ClientBuilder::new().timeout(Duration::new(5, 0)).build().unwrap()
 });
-static IGNORED_HEADERS: [&str; 2] = ["x-real-ip", "x-forwarded-for"];
+static IGNORED_HEADERS: [&str; 4] = ["x-real-ip", "x-forwarded-for", "origin", "referer"];
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
     if cfg!(test) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }
 });
@@ -86,19 +86,19 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
     let mut force_agent = true;
 
     for (header_name, header_value) in req.headers() {
-        let mut header_name_raw = match header_name.as_str() {
+        let header_name_raw = header_name.to_string().to_owned().to_lowercase();
+        if IGNORED_HEADERS.contains(&header_name_raw.as_str()) { continue; }
+
+        let mut header_name_parsed = match header_name_raw.as_str() {
             "x-origin" => "origin",
             "x-referer" => "referer",
             h => &h
         };
 
-        let lowercase_header_name = header_name_raw.to_lowercase();
-
-        if IGNORED_HEADERS.contains(&header_name_raw) { continue; }
-        if lowercase_header_name == "user-agent" { force_agent = false; }
+        if header_name_parsed == "user-agent" { force_agent = false; }
 
         headers.insert(
-            HeaderName::from_str(&*lowercase_header_name).unwrap(),
+            HeaderName::from_str(&*header_name_parsed).unwrap(),
             header_value.clone()
         );
     }
