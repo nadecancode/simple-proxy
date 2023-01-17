@@ -729,6 +729,7 @@ dependencies = [
  "actix-web",
  "actix-web-lab",
  "futures",
+ "once_cell",
  "reqwest",
  "serde",
  "tokio",
