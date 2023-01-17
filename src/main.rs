@@ -86,7 +86,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
     let mut force_agent = true;
 
     for (header_name, header_value) in req.headers() {
-        let header_name_raw = header_name.to_string().to_owned().to_lowercase();
+        let header_name_raw = header_name.to_string().to_lowercase();
         if IGNORED_HEADERS.contains(&header_name_raw.as_str()) { continue; }
 
         let mut header_name_parsed = match header_name_raw.as_str() {
