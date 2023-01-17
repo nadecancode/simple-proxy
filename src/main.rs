@@ -30,10 +30,14 @@ static PROXY_HOST_NAME: &str = "proxy.nade.me";
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     ClientBuilder::new().timeout(Duration::new(5, 0)).build().unwrap()
 });
-static IGNORED_HEADERS: [&str; 5] = ["x-real-ip", "x-forwarded-for", "origin", "referer", "host"];
+static IGNORED_HEADERS: [HeaderName; 4] = [header::ORIGIN, header::REFERER, header::HOST, header::ACCEPT_ENCODING];
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
     if cfg!(test) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }
 });
+static FILTERED_HEADERS: [HeaderName; 5] = [
+    header::ACCESS_CONTROL_ALLOW_ORIGIN, header::ACCESS_CONTROL_ALLOW_CREDENTIALS, header::ACCESS_CONTROL_ALLOW_HEADERS, header::ACCESS_CONTROL_ALLOW_METHODS,
+    header::CACHE_CONTROL
+];
 
 #[derive(Deserialize)]
 struct RedirectQuery {
@@ -86,8 +90,8 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
     let mut force_agent = true;
 
     for (header_name, header_value) in req.headers() {
-        let header_name_raw = header_name.to_string().to_lowercase();
-        if IGNORED_HEADERS.contains(&header_name_raw.as_str()) { continue; }
+        let header_name_raw = header_name.to_string().to_owned().to_lowercase();
+        if IGNORED_HEADERS.contains(header_name) { continue; }
 
         let mut header_name_parsed = match header_name_raw.as_str() {
             "x-origin" => "origin",
@@ -96,7 +100,9 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
             h => &h
         };
 
-        if header_name_parsed == "user-agent" { force_agent = false; }
+        if header_name == header::USER_AGENT { force_agent = false; }
+
+        // println!("{} {}", HeaderName::from_str(&*header_name_parsed).unwrap(), header_value.clone().to_str().unwrap());
 
         headers.insert(
             HeaderName::from_str(&*header_name_parsed).unwrap(),
@@ -111,8 +117,17 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         .headers(headers)
         .send().await.unwrap();
 
-    return HttpResponse::Ok()
-        .insert_header(("content-type", response.headers().get("content-type").unwrap().to_str().unwrap()))
+    // println!("{}", response.text().await.unwrap());
+
+    let mut http_response = HttpResponse::Ok();
+
+    for (header_name, header_value) in response.headers() {
+        if FILTERED_HEADERS.contains(header_name) { continue; }
+
+        http_response.insert_header((header_name, header_value));
+    }
+
+    return http_response
         .body(response.bytes().await.unwrap())
 }
 
