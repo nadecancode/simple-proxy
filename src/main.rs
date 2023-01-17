@@ -30,7 +30,7 @@ static PROXY_HOST_NAME: &str = "proxy.nade.me";
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     ClientBuilder::new().timeout(Duration::new(5, 0)).build().unwrap()
 });
-static IGNORED_HEADERS: [&str; 4] = ["x-real-ip", "x-forwarded-for", "origin", "referer"];
+static IGNORED_HEADERS: [&str; 5] = ["x-real-ip", "x-forwarded-for", "origin", "referer", "host"];
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
     if cfg!(test) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }
 });
@@ -92,6 +92,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         let mut header_name_parsed = match header_name_raw.as_str() {
             "x-origin" => "origin",
             "x-referer" => "referer",
+            "x-host" => "host",
             h => &h
         };
 
