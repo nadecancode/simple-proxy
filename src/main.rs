@@ -32,7 +32,7 @@ static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
 });
 static IGNORED_HEADERS: [HeaderName; 4] = [header::ORIGIN, header::REFERER, header::HOST, header::ACCEPT_ENCODING];
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
-    if cfg!(test) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }
+    if cfg!(debug_assertions) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }
 });
 static FILTERED_HEADERS: [HeaderName; 5] = [
     header::ACCESS_CONTROL_ALLOW_ORIGIN, header::ACCESS_CONTROL_ALLOW_CREDENTIALS, header::ACCESS_CONTROL_ALLOW_HEADERS, header::ACCESS_CONTROL_ALLOW_METHODS,
@@ -127,8 +127,12 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         http_response.insert_header((header_name, header_value));
     }
 
+    let mut response_text = response.text().await.unwrap();
+
+    response_text = response_text.replace(&format!("{}/", supplied_meta.to_string()), "");
+
     return http_response
-        .body(response.bytes().await.unwrap())
+        .body(response_text)
 }
 
 #[actix_web::main]
@@ -142,7 +146,7 @@ async fn main() -> std::io::Result<()> {
         .service(redirect)
         .wrap(Cors::default().allow_any_origin().allow_any_header().allow_any_method().supports_credentials())
     )
-        .bind((if !cfg!(test) { "0.0.0.0" } else { "127.0.0.1" }, 8000))?
+        .bind((if !cfg!(debug_assertions) { "0.0.0.0" } else { "127.0.0.1" }, 8000))?
         .run()
         .await
 }
