@@ -102,7 +102,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
         if header_name == header::USER_AGENT { force_agent = false; }
 
-        // println!("{} {}", HeaderName::from_str(&*header_name_parsed).unwrap(), header_value.clone().to_str().unwrap());
+        println!("{} {}", HeaderName::from_str(&*header_name_parsed).unwrap(), header_value.clone().to_str().unwrap());
 
         headers.insert(
             HeaderName::from_str(&*header_name_parsed).unwrap(),
@@ -127,12 +127,16 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         http_response.insert_header((header_name, header_value));
     }
 
-    let mut response_text = response.text().await.unwrap();
+    if response.headers().get("content-type").unwrap().to_str().unwrap() == "application/vnd.apple.mpegurl" {
+        let mut response_text = response.text().await.unwrap();
 
-    response_text = response_text.replace(&format!("{}/", supplied_meta.to_string()), "");
+        response_text = response_text.replace(&format!("{}/", supplied_meta.to_string()), "");
 
-    return http_response
-        .body(response_text)
+        return http_response
+            .body(response_text)
+    }
+
+    return http_response.body(response.bytes().await.unwrap())
 }
 
 #[actix_web::main]
