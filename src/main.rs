@@ -20,7 +20,7 @@ use actix_web_lab::middleware::{from_fn, Next};
 use std::any::Any;
 use std::ops::ControlFlow;
 use once_cell::sync::Lazy;
-use reqwest::header::{HeaderName, USER_AGENT as USER_AGENT_HEADER_NAME};
+use reqwest::header::{HeaderName, HeaderValue, USER_AGENT as USER_AGENT_HEADER_NAME};
 
 pub struct CORS;
 
@@ -127,7 +127,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         http_response.insert_header((header_name, header_value));
     }
 
-    if response.headers().get("content-type").unwrap().to_str().unwrap() == "application/vnd.apple.mpegurl" {
+    if response.headers().contains_key(header::CONTENT_TYPE) && response.headers().get(header::CONTENT_TYPE).unwrap() == HeaderValue::from_str("application/vnd.apple.mpegurl").unwrap() {
         let mut response_text = response.text().await.unwrap();
 
         response_text = response_text.replace(&format!("{}/", supplied_meta.to_string()), "");
