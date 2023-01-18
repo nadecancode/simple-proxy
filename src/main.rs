@@ -28,7 +28,7 @@ static USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit
 static PROXY_HOST_NAME: &str = "proxy.nade.me";
 
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
-    ClientBuilder::new().timeout(Duration::new(5, 0)).build().unwrap()
+    ClientBuilder::new().build().unwrap()
 });
 static IGNORED_HEADERS: [HeaderName; 4] = [header::ORIGIN, header::REFERER, header::HOST, header::ACCEPT_ENCODING];
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
