@@ -111,6 +111,8 @@ async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpRes
     let meta = format!("{}{}", path, if query != "" { format!("?{}", query) } else { query });
     let mut file_name = raw_file_name.to_owned();
 
+    if file_name.contains("?") { file_name = file_name.split_once("?").unwrap().0.to_string() }
+
     return HttpResponse::MovedPermanently()
         .append_header((header::LOCATION, format!("{}/file/{}/{}", REDIRECT_URL.as_str(), CRYPTO.encrypt_str_to_base64(meta).replace("/", "-"), file_name)))
         .finish()
