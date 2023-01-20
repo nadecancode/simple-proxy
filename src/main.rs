@@ -94,10 +94,18 @@ async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpRes
     }
 
     let parsed_url = decoded_url;
-    let (path, file_name) = parsed_url.rsplit_once("/").unwrap();
+    let (path, mut raw_file_name) = parsed_url.rsplit_once("/").unwrap();
+
+    let unwrapped_url = url.unwrap();
+    let raw_query = unwrapped_url.query();
+
+    let query = raw_query.map(|q| q.to_string()).unwrap_or_default();
+
+    let meta = format!("{}{}", path, if query != "" { format!("?{}", query) } else { query });
+    let mut file_name = raw_file_name.to_owned();
 
     return HttpResponse::MovedPermanently()
-        .append_header((header::LOCATION, format!("{}/file/{}/{}", REDIRECT_URL.as_str(), CRYPTO.encrypt_str_to_base64(path).replace("/", "-"), file_name)))
+        .append_header((header::LOCATION, format!("{}/file/{}/{}", REDIRECT_URL.as_str(), CRYPTO.encrypt_str_to_base64(meta).replace("/", "-"), file_name)))
         .finish()
 }
 
@@ -110,16 +118,19 @@ async fn proxy_options(_req: HttpRequest) -> HttpResponse {
 #[get("/file/{meta}/{file}")]
 async fn proxy(req: HttpRequest) -> HttpResponse {
     let raw_meta = req.match_info().query("meta").replace("-", "/");
-    let mut supplied_meta = CRYPTO.decrypt_base64_to_string(decode(&*raw_meta).unwrap());
+    let supplied_meta = CRYPTO.decrypt_base64_to_string(decode(&*raw_meta).unwrap());
 
     if supplied_meta.is_err() {
         return HttpResponse::BadRequest()
             .body("Invalid URL.");
     }
 
-    let meta = supplied_meta.unwrap();
+    let supplied_unwrapped_meta = supplied_meta.unwrap();
+    let decoded_meta = if !supplied_unwrapped_meta.contains("?") { (supplied_unwrapped_meta.as_str(), "") } else { supplied_unwrapped_meta.split_once("?").unwrap() };
+    let meta = decoded_meta.0;
+    let raw_queries = decoded_meta.1;
     let file = req.match_info().get("file").unwrap();
-    let queries = req.query_string();
+    let queries = decode(raw_queries).expect("UTF-8");
 
     let mut headers = request_header::HeaderMap::new();
     let mut force_agent = true;
@@ -147,8 +158,10 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
     if force_agent { headers.insert(USER_AGENT_HEADER_NAME, USER_AGENT.parse().unwrap()); }
 
+    let url = meta.to_owned() + "/" + file + "?" + &*queries;
+
     let response = HTTP_CLIENT
-        .get(meta.to_string() + "/" + file + "?" + queries)
+        .get(url)
         .headers(headers)
         .send().await.unwrap();
 
@@ -167,7 +180,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
     if content_type_header.is_some() && content_type_header.unwrap() == M3U8_CONTENT_TYPE {
         let mut response_text = response.text().await.unwrap();
 
-        response_text = response_text.replace(&format!("{}/", meta.to_string()), "");
+        response_text = response_text.replace(&format!("?{}", queries), "").replace(&format!("{}/", meta.to_string()), "");
 
         return http_response
             .body(response_text)
