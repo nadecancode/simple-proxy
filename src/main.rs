@@ -92,11 +92,18 @@ async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpRes
         return HttpResponse::BadRequest()
             .body(format!("A valid URL needs to be supplied. {}", url.err().unwrap()));
     }
-
     let parsed_url = decoded_url;
     let (path, mut raw_file_name) = parsed_url.rsplit_once("/").unwrap();
 
     let unwrapped_url = url.unwrap();
+
+    let host = unwrapped_url.host_str();
+
+    if host.is_some() && host.unwrap() == PROXY_HOST_NAME {
+        return HttpResponse::Forbidden()
+            .body("You cannot proxy an URL to itself. Do not try to break the server.");
+    }
+
     let raw_query = unwrapped_url.query();
 
     let query = raw_query.map(|q| q.to_string()).unwrap_or_default();
