@@ -21,6 +21,13 @@ use std::any::Any;
 use std::ops::ControlFlow;
 use once_cell::sync::Lazy;
 use reqwest::header::{HeaderName, HeaderValue, USER_AGENT as USER_AGENT_HEADER_NAME};
+use std::env;
+use rand::distributions::Alphanumeric;
+
+use magic_crypt::{new_magic_crypt, MagicCryptTrait, MagicCrypt256};
+
+extern crate rand;
+use rand::Rng;
 
 pub struct CORS;
 
@@ -38,6 +45,27 @@ static FILTERED_HEADERS: [HeaderName; 5] = [
     header::ACCESS_CONTROL_ALLOW_ORIGIN, header::ACCESS_CONTROL_ALLOW_CREDENTIALS, header::ACCESS_CONTROL_ALLOW_HEADERS, header::ACCESS_CONTROL_ALLOW_METHODS,
     header::CACHE_CONTROL
 ];
+
+static CRYPTO: Lazy<MagicCrypt256> = Lazy::new(|| {
+    new_magic_crypt!(ENCRYPTION_KEY.as_str(), 256)
+});
+
+static ENCRYPTION_KEY: Lazy<String> = Lazy::new(|| {
+    let key = env::var("key");
+
+    if key.is_ok() {
+        return key.unwrap();
+    }
+
+
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(14)
+        .map(char::from)
+        .collect()
+});
+
+static M3U8_CONTENT_TYPE: &str = "application/vnd.apple.mpegurl";
 
 #[derive(Deserialize)]
 struct RedirectQuery {
@@ -69,7 +97,7 @@ async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpRes
     let (path, file_name) = parsed_url.rsplit_once("/").unwrap();
 
     return HttpResponse::MovedPermanently()
-        .append_header((header::LOCATION, format!("{}/file/{}/{}", REDIRECT_URL.as_str(), encode(path), file_name)))
+        .append_header((header::LOCATION, format!("{}/file/{}/{}", REDIRECT_URL.as_str(), CRYPTO.encrypt_str_to_base64(path).replace("/", "-"), file_name)))
         .finish()
 }
 
@@ -81,8 +109,15 @@ async fn proxy_options(_req: HttpRequest) -> HttpResponse {
 
 #[get("/file/{meta}/{file}")]
 async fn proxy(req: HttpRequest) -> HttpResponse {
-    let raw_meta = req.match_info().query("meta");
-    let mut supplied_meta = decode(raw_meta).expect("UTF-8");
+    let raw_meta = req.match_info().query("meta").replace("-", "/");
+    let mut supplied_meta = CRYPTO.decrypt_base64_to_string(decode(&*raw_meta).unwrap());
+
+    if supplied_meta.is_err() {
+        return HttpResponse::BadRequest()
+            .body("Invalid URL.");
+    }
+
+    let meta = supplied_meta.unwrap();
     let file = req.match_info().get("file").unwrap();
     let queries = req.query_string();
 
@@ -113,7 +148,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
     if force_agent { headers.insert(USER_AGENT_HEADER_NAME, USER_AGENT.parse().unwrap()); }
 
     let response = HTTP_CLIENT
-        .get(supplied_meta.to_string() + "/" + file + "?" + queries)
+        .get(meta.to_string() + "/" + file + "?" + queries)
         .headers(headers)
         .send().await.unwrap();
 
@@ -129,10 +164,10 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
     let content_type_header = response.headers().get(header::CONTENT_TYPE);
 
-    if content_type_header.is_some() && content_type_header.unwrap() == "application/vnd.apple.mpegurl" {
+    if content_type_header.is_some() && content_type_header.unwrap() == M3U8_CONTENT_TYPE {
         let mut response_text = response.text().await.unwrap();
 
-        response_text = response_text.replace(&format!("{}/", supplied_meta.to_string()), "");
+        response_text = response_text.replace(&format!("{}/", meta.to_string()), "");
 
         return http_response
             .body(response_text)
