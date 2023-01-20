@@ -127,7 +127,9 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         http_response.insert_header((header_name, header_value));
     }
 
-    if response.headers().contains_key(header::CONTENT_TYPE) && response.headers().get(header::CONTENT_TYPE).unwrap() == "application/vnd.apple.mpegurl" {
+    let content_type_header = response.headers().get(header::CONTENT_TYPE);
+
+    if content_type_header.is_some() && content_type_header.unwrap() == "application/vnd.apple.mpegurl" {
         let mut response_text = response.text().await.unwrap();
 
         response_text = response_text.replace(&format!("{}/", supplied_meta.to_string()), "");
