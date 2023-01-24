@@ -2,7 +2,7 @@ use std::fmt::format;
 use std::str::FromStr;
 use std::time::Duration;
 use actix_cors::Cors;
-use actix_web::{get, guard::Host, web, Result, options, HttpRequest, Handler, Responder};
+use actix_web::{get, head, routes, guard::Host, web, Result, options, HttpRequest, Handler, Responder};
 use actix_web::http::header;
 use actix_web::web::resource;
 use reqwest::{ClientBuilder, Url, header as request_header, Method, Client};
@@ -79,6 +79,14 @@ async fn index() -> &'static str {
     "こんにちわ"
 }
 
+#[routes]
+#[options("/redirect")]
+#[head("/redirect")]
+async fn redirect_options_head(_req: HttpRequest) -> HttpResponse {
+    return HttpResponse::Ok()
+        .finish()
+}
+
 #[get("/redirect")]
 async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpResponse {
     let raw_url = &query.url;
@@ -120,8 +128,10 @@ async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpRes
         .finish()
 }
 
+#[routes]
 #[options("/file/{meta}/{file}")]
-async fn proxy_options(_req: HttpRequest) -> HttpResponse {
+#[head("/file/{meta}/{file}")]
+async fn proxy_options_head(_req: HttpRequest) -> HttpResponse {
     return HttpResponse::Ok()
         .finish()
 }
@@ -194,6 +204,8 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         if content_type == M3U8_CONTENT_TYPE {
             let mut response_text = response.text().await.unwrap();
 
+            // println!("{}", meta.to_string());
+
             response_text = response_text.replace(&format!("?{}", queries), "").replace(&format!("{}/", meta.to_string()), "");
 
             return http_response
@@ -213,8 +225,9 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(|| App::new()
         .service(index)
         .service(proxy)
-        .service(proxy_options)
+        .service(proxy_options_head)
         .service(redirect)
+        .service(redirect_options_head)
         .wrap(Cors::default().allow_any_origin().allow_any_header().allow_any_method().supports_credentials())
     )
         .bind((if !cfg!(debug_assertions) { "0.0.0.0" } else { "127.0.0.1" }, 8000))?
