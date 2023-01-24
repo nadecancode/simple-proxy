@@ -32,7 +32,7 @@ use rand::Rng;
 pub struct CORS;
 
 static USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36";
-static PROXY_HOST_NAME: &str = "proxy.nade.me";
+static PROXY_HOST_NAME: &str = "cdn.nade.me";
 
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     ClientBuilder::new().build().unwrap()
