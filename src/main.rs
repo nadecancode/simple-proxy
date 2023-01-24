@@ -20,8 +20,9 @@ use actix_web_lab::middleware::{from_fn, Next};
 use std::any::Any;
 use std::ops::ControlFlow;
 use once_cell::sync::Lazy;
-use reqwest::header::{HeaderName, HeaderValue, USER_AGENT as USER_AGENT_HEADER_NAME};
+use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue, USER_AGENT as USER_AGENT_HEADER_NAME};
 use std::env;
+use actix_web::http::header::ContentType;
 use rand::distributions::Alphanumeric;
 
 use magic_crypt::{new_magic_crypt, MagicCryptTrait, MagicCrypt256};
@@ -66,6 +67,7 @@ static ENCRYPTION_KEY: Lazy<String> = Lazy::new(|| {
 });
 
 static M3U8_CONTENT_TYPE: &str = "application/vnd.apple.mpegurl";
+static HTML_CONTENT_TYPE: &str = "text/html";
 
 #[derive(Deserialize)]
 struct RedirectQuery {
@@ -184,15 +186,21 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         http_response.insert_header((header_name, header_value));
     }
 
-    let content_type_header = response.headers().get(header::CONTENT_TYPE);
+    let content_type_header = response.headers().get(CONTENT_TYPE);
 
-    if content_type_header.is_some() && content_type_header.unwrap() == M3U8_CONTENT_TYPE {
-        let mut response_text = response.text().await.unwrap();
+    if content_type_header.is_some() {
+        let content_type = content_type_header.unwrap();
 
-        response_text = response_text.replace(&format!("?{}", queries), "").replace(&format!("{}/", meta.to_string()), "");
+        if content_type == M3U8_CONTENT_TYPE {
+            let mut response_text = response.text().await.unwrap();
 
-        return http_response
-            .body(response_text)
+            response_text = response_text.replace(&format!("?{}", queries), "").replace(&format!("{}/", meta.to_string()), "");
+
+            return http_response
+                .body(response_text)
+        } else if content_type.to_str().unwrap_or_default().contains(HTML_CONTENT_TYPE) {
+            http_response.insert_header((request_header::CACHE_CONTROL, "no-store"));
+        }
     }
 
     return http_response.body(response.bytes().await.unwrap())
