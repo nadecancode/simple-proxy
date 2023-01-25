@@ -23,7 +23,12 @@ use once_cell::sync::Lazy;
 use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue, USER_AGENT as USER_AGENT_HEADER_NAME};
 use std::env;
 use actix_web::http::header::ContentType;
+use lazy_static::lazy_static;
 use rand::distributions::Alphanumeric;
+
+extern crate string_builder;
+
+use string_builder::Builder;
 
 use magic_crypt::{new_magic_crypt, MagicCryptTrait, MagicCrypt256};
 
@@ -87,6 +92,23 @@ async fn redirect_options_head(_req: HttpRequest) -> HttpResponse {
         .finish()
 }
 
+fn generate_path(url: Url) -> String {
+    let raw_url = url.as_str();
+
+    let (path, mut raw_file_name) = raw_url.rsplit_once("/").unwrap();
+
+    let raw_query = url.query();
+
+    let query = raw_query.map(|q| q.to_string()).unwrap_or_default();
+
+    let meta = format!("{}{}", path, if query != "" { format!("?{}", query) } else { query });
+    let mut file_name = raw_file_name.to_owned();
+
+    if file_name.contains("?") { file_name = file_name.split_once("?").unwrap().0.to_string() }
+
+    return format!("{}/file/{}/{}", REDIRECT_URL.as_str(), CRYPTO.encrypt_str_to_base64(meta).replace("/", "-"), file_name)
+}
+
 #[get("/redirect")]
 async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpResponse {
     let raw_url = &query.url;
@@ -102,11 +124,7 @@ async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpRes
         return HttpResponse::BadRequest()
             .body(format!("A valid URL needs to be supplied. {}", url.err().unwrap()));
     }
-    let parsed_url = decoded_url;
-    let (path, mut raw_file_name) = parsed_url.rsplit_once("/").unwrap();
-
     let unwrapped_url = url.unwrap();
-
     let host = unwrapped_url.host_str();
 
     if host.is_some() && host.unwrap() == PROXY_HOST_NAME {
@@ -114,17 +132,8 @@ async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpRes
             .body("You cannot proxy an URL to itself. Do not try to break the server.");
     }
 
-    let raw_query = unwrapped_url.query();
-
-    let query = raw_query.map(|q| q.to_string()).unwrap_or_default();
-
-    let meta = format!("{}{}", path, if query != "" { format!("?{}", query) } else { query });
-    let mut file_name = raw_file_name.to_owned();
-
-    if file_name.contains("?") { file_name = file_name.split_once("?").unwrap().0.to_string() }
-
     return HttpResponse::MovedPermanently()
-        .append_header((header::LOCATION, format!("{}/file/{}/{}", REDIRECT_URL.as_str(), CRYPTO.encrypt_str_to_base64(meta).replace("/", "-"), file_name)))
+        .append_header((header::LOCATION, generate_path(unwrapped_url)))
         .finish()
 }
 
@@ -199,23 +208,58 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
     let content_type_header = response.headers().get(CONTENT_TYPE);
 
     if content_type_header.is_some() {
-        let content_type = content_type_header.unwrap();
+        let content_type = content_type_header.unwrap().to_str().unwrap_or_default();
 
-        if content_type == M3U8_CONTENT_TYPE {
+        if content_type.contains(M3U8_CONTENT_TYPE) {
             let mut response_text = response.text().await.unwrap();
 
             // println!("{}", meta.to_string());
 
-            response_text = response_text.replace(&format!("?{}", queries), "").replace(&format!("{}/", meta.to_string()), "");
+            let mut builder = Builder::default();
+            for line in response_text.split("\n") {
+                if line.starts_with("#") { builder.append(line) }
+                else if !line.is_empty() {
+                    let mut parsed_url;
+
+                    if is_url(line) {
+                        parsed_url = Url::parse(line).unwrap();
+                    } else {
+                        parsed_url = Url::parse(&*(meta.to_owned() + "/" + line)).unwrap();
+                    }
+
+                    builder.append(generate_path(parsed_url));
+                }
+
+                builder.append("\n");
+            }
 
             return http_response
-                .body(response_text)
-        } else if content_type.to_str().unwrap_or_default().contains(HTML_CONTENT_TYPE) {
+                .body(builder.string().unwrap())
+        } else if content_type.contains(HTML_CONTENT_TYPE) {
+            http_response.insert_header((request_header::CACHE_CONTROL, "no-store"));
+        } else if file.ends_with(".m3u8") && !content_type.contains(M3U8_CONTENT_TYPE) {
             http_response.insert_header((request_header::CACHE_CONTROL, "no-store"));
         }
     }
 
     return http_response.body(response.bytes().await.unwrap())
+}
+
+extern crate lazy_static;
+
+use regex::Regex;
+
+const URL_REGEX: &str =
+    r"https?://(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,4}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)";
+
+lazy_static! {
+    static ref RE: Regex = {
+        Regex::new(URL_REGEX).unwrap()
+    };
+}
+
+pub fn is_url(url: &str) -> bool {
+    return RE.is_match(url);
 }
 
 #[actix_web::main]
