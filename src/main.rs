@@ -47,9 +47,10 @@ static IGNORED_HEADERS: [HeaderName; 4] = [header::ORIGIN, header::REFERER, head
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
     if cfg!(debug_assertions) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }
 });
-static FILTERED_HEADERS: [HeaderName; 5] = [
+static FILTERED_HEADERS: [HeaderName; 7] = [
     header::ACCESS_CONTROL_ALLOW_ORIGIN, header::ACCESS_CONTROL_ALLOW_CREDENTIALS, header::ACCESS_CONTROL_ALLOW_HEADERS, header::ACCESS_CONTROL_ALLOW_METHODS,
-    header::CACHE_CONTROL
+    header::CACHE_CONTROL,
+    header::SERVER, header::DATE
 ];
 
 static CRYPTO: Lazy<MagicCrypt256> = Lazy::new(|| {
@@ -209,6 +210,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
     if content_type_header.is_some() {
         let content_type = content_type_header.unwrap().to_str().unwrap_or_default();
+        let mut no_cdn_cache = false;
 
         if content_type.contains(M3U8_CONTENT_TYPE) {
             let mut response_text = response.text().await.unwrap();
@@ -236,9 +238,15 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
             return http_response
                 .body(builder.string().unwrap())
         } else if content_type.contains(HTML_CONTENT_TYPE) {
-            http_response.insert_header((request_header::CACHE_CONTROL, "no-store"));
+            no_cdn_cache = true;
         } else if file.ends_with(".m3u8") && !content_type.contains(M3U8_CONTENT_TYPE) {
-            http_response.insert_header((request_header::CACHE_CONTROL, "no-store"));
+            no_cdn_cache = true;
+        }
+
+        if no_cdn_cache {
+            http_response.insert_header((request_header::CACHE_CONTROL, "max-age=0, s-maxage=0"));
+            http_response.insert_header(("CDN-Cache-Control", "max-age=0, s-maxage=0"));
+            http_response.insert_header(("Cloudflare-CDN-Cache-Control", "max-age=0, s-maxage=0"));
         }
     }
 
