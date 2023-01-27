@@ -5,7 +5,7 @@ use actix_cors::Cors;
 use actix_web::{get, head, routes, guard::Host, web, Result, options, HttpRequest, Handler, Responder};
 use actix_web::http::header;
 use actix_web::web::resource;
-use reqwest::{ClientBuilder, Url, header as request_header, Method, Client};
+use reqwest::{ClientBuilder, Url, header as request_header, Method, Client, StatusCode};
 use urlencoding::{decode, encode};
 use url::{Host, Url as RustUrl};
 use serde::Deserialize;
@@ -210,7 +210,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
     if content_type_header.is_some() {
         let content_type = content_type_header.unwrap().to_str().unwrap_or_default();
-        let mut no_cdn_cache = false;
+        let mut origin_error = false;
 
         if content_type.contains(M3U8_CONTENT_TYPE) {
             let mut response_text = response.text().await.unwrap();
@@ -238,15 +238,16 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
             return http_response
                 .body(builder.string().unwrap())
         } else if content_type.contains(HTML_CONTENT_TYPE) {
-            no_cdn_cache = true;
+            origin_error = true;
         } else if file.ends_with(".m3u8") && !content_type.contains(M3U8_CONTENT_TYPE) {
-            no_cdn_cache = true;
+            origin_error = true;
         }
 
-        if no_cdn_cache {
+        if origin_error {
             http_response.insert_header((request_header::CACHE_CONTROL, "max-age=0, s-maxage=0"));
             http_response.insert_header(("CDN-Cache-Control", "max-age=0, s-maxage=0"));
             http_response.insert_header(("Cloudflare-CDN-Cache-Control", "max-age=0, s-maxage=0"));
+            http_response.status(StatusCode::FORBIDDEN); // Prevent 200 status code with 403 content..
         }
     }
 
