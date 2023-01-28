@@ -134,6 +134,7 @@ async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpRes
     }
 
     return HttpResponse::MovedPermanently()
+        .append_header((header::CACHE_CONTROL, "no-store"))
         .append_header((header::LOCATION, generate_path(unwrapped_url)))
         .finish()
 }
@@ -244,7 +245,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         }
 
         if origin_error {
-            http_response.insert_header((request_header::CACHE_CONTROL, "max-age=0, s-maxage=0"));
+            http_response.insert_header((request_header::CACHE_CONTROL, "no-store"));
             http_response.insert_header(("CDN-Cache-Control", "max-age=0, s-maxage=0"));
             http_response.insert_header(("Cloudflare-CDN-Cache-Control", "max-age=0, s-maxage=0"));
             http_response.status(StatusCode::FORBIDDEN); // Prevent 200 status code with 403 content..
