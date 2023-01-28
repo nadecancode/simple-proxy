@@ -246,8 +246,8 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
         if origin_error {
             http_response.insert_header((request_header::CACHE_CONTROL, "no-store"));
-            http_response.insert_header(("CDN-Cache-Control", "max-age=0, s-maxage=0"));
-            http_response.insert_header(("Cloudflare-CDN-Cache-Control", "max-age=0, s-maxage=0"));
+            http_response.insert_header(("CDN-Cache-Control", "no-store"));
+            http_response.insert_header(("Cloudflare-CDN-Cache-Control", "no-store"));
             http_response.status(StatusCode::FORBIDDEN); // Prevent 200 status code with 403 content..
         }
     }
