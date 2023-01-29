@@ -1,28 +1,22 @@
-use std::fmt::format;
 use std::str::FromStr;
-use std::time::Duration;
+
 use actix_cors::Cors;
-use actix_web::{get, head, routes, guard::Host, web, Result, options, HttpRequest, Handler, Responder};
+use actix_web::{get, routes, web, HttpRequest};
 use actix_web::http::header;
-use actix_web::web::resource;
-use reqwest::{ClientBuilder, Url, header as request_header, Method, Client, StatusCode};
-use urlencoding::{decode, encode};
-use url::{Host, Url as RustUrl};
+
+use reqwest::{ClientBuilder, Url, header as request_header, Client, StatusCode};
+use urlencoding::{decode};
+use url::{Url as RustUrl};
 use serde::Deserialize;
-use futures::future::{LocalBoxFuture};
+
 use actix_web::{
-    body::EitherBody,
-    dev::{self, Service, ServiceRequest, ServiceResponse, Transform},
-    http, Error, HttpResponse,
+    HttpResponse,
 };
-use actix_web::body::{BoxBody, MessageBody};
-use actix_web_lab::middleware::{from_fn, Next};
-use std::any::Any;
-use std::ops::ControlFlow;
+
 use once_cell::sync::Lazy;
-use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue, USER_AGENT as USER_AGENT_HEADER_NAME};
+use reqwest::header::{CONTENT_TYPE, HeaderName, USER_AGENT as USER_AGENT_HEADER_NAME};
 use std::env;
-use actix_web::http::header::ContentType;
+
 use lazy_static::lazy_static;
 use rand::distributions::Alphanumeric;
 
@@ -102,7 +96,7 @@ fn generate_path(url: Url) -> String {
 
     if raw_url.contains("?") { raw_url = raw_url.rsplit_once("?").unwrap().0; }
 
-    let (path, mut raw_file_name) = raw_url.rsplit_once("/").unwrap();
+    let (path, raw_file_name) = raw_url.rsplit_once("/").unwrap();
 
     let raw_query = url.query();
 
@@ -117,7 +111,7 @@ fn generate_path(url: Url) -> String {
 }
 
 #[get("/redirect")]
-async fn redirect(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpResponse {
+async fn redirect(_req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpResponse {
     let raw_url = &query.url;
     if raw_url == "" {
         return HttpResponse::BadRequest()
@@ -191,7 +185,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         if IGNORED_HEADERS.contains(header_name) { continue; }
 
         let header_name_raw = header_name.to_string().to_lowercase();
-        let mut header_name_parsed = match header_name_raw.as_str() {
+        let header_name_parsed = match header_name_raw.as_str() {
             "x-origin" => "origin",
             "x-referer" => "referer",
             "x-host" => "host",
@@ -240,7 +234,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         let mut origin_error = false;
 
         if content_type.contains(M3U8_CONTENT_TYPE) {
-            let mut response_text = response.text().await.unwrap();
+            let response_text = response.text().await.unwrap();
 
             // println!("{}", meta.to_string());
 
@@ -255,7 +249,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
                     }
                 }
                 else if !line.is_empty() {
-                    let mut parsed_url;
+                    let parsed_url;
 
                     if is_url(line) {
                         parsed_url = Url::parse(line).unwrap();
