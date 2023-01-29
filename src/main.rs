@@ -52,6 +52,10 @@ static FILTERED_HEADERS: [HeaderName; 7] = [
     header::CACHE_CONTROL,
     header::SERVER, header::DATE
 ];
+static FORWARDING_RESERVED_HEADERS: [&str; 2] = [
+    "x-origin",
+    "x-referer",
+];
 
 static CRYPTO: Lazy<MagicCrypt256> = Lazy::new(|| {
     new_magic_crypt!(ENCRYPTION_KEY.as_str(), 256)
@@ -94,7 +98,9 @@ async fn redirect_options_head(_req: HttpRequest) -> HttpResponse {
 }
 
 fn generate_path(url: Url) -> String {
-    let raw_url = url.as_str();
+    let mut raw_url = url.as_str();
+
+    if raw_url.contains("?") { raw_url = raw_url.rsplit_once("?").unwrap().0; }
 
     let (path, mut raw_file_name) = raw_url.rsplit_once("/").unwrap();
 
@@ -167,7 +173,21 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
     let mut headers = request_header::HeaderMap::new();
     let mut force_agent = true;
 
-    for (header_name, header_value) in req.headers() {
+    let url = meta.to_owned() + "/" + file + "?" + &*queries;
+    let request_headers = req.headers();
+    let parsed_url = Url::parse(&*url).unwrap();
+
+    let parsed_host = parsed_url.host_str().unwrap();
+    let scheme = parsed_url.scheme();
+    let constructed_host: String = format!("{}://{}", scheme, parsed_host).parse().unwrap();
+
+    for header_name in FORWARDING_RESERVED_HEADERS {
+        if !request_headers.contains_key(header_name) {
+            headers.insert(HeaderName::from_str(&*header_name.replace("x-", "")).unwrap(), constructed_host.parse().unwrap());
+        }
+    }
+
+    for (header_name, header_value) in request_headers {
         if IGNORED_HEADERS.contains(header_name) { continue; }
 
         let header_name_raw = header_name.to_string().to_lowercase();
@@ -188,9 +208,15 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         );
     }
 
+    /*
+    for (header_name, header_value) in headers.clone() {
+        println!("{} {}", header_name.unwrap(), header_value.to_str().unwrap());
+    }
+     */
+
     if force_agent { headers.insert(USER_AGENT_HEADER_NAME, USER_AGENT.parse().unwrap()); }
 
-    let url = meta.to_owned() + "/" + file + "?" + &*queries;
+    // println!("{}", url);
 
     let response = HTTP_CLIENT
         .get(url)
@@ -220,7 +246,14 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
             let mut builder = Builder::default();
             for line in response_text.split("\n") {
-                if line.starts_with("#") { builder.append(line) }
+                if line.starts_with("#") {
+                    if line.starts_with("#EXT-X-KEY") {
+                        let key_url = between(line, "URI=\"", "\"");
+                        builder.append(line.replace(key_url, &*generate_path(Url::parse(key_url).unwrap())));
+                    } else {
+                        builder.append(line);
+                    }
+                }
                 else if !line.is_empty() {
                     let mut parsed_url;
 
@@ -253,6 +286,18 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
     }
 
     return http_response.body(response.bytes().await.unwrap())
+}
+
+fn between<'a>(source: &'a str, start: &'a str, end: &'a str) -> &'a str {
+    let start_position = source.find(start);
+
+    if start_position.is_some() {
+        let start_position = start_position.unwrap() + start.len();
+        let source = &source[start_position..];
+        let end_position = source.find(end).unwrap_or_default();
+        return &source[..end_position];
+    }
+    return "";
 }
 
 extern crate lazy_static;
