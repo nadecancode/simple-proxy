@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use actix_cors::Cors;
-use actix_web::{get, routes, web, HttpRequest};
+use actix_web::{get, routes, web, HttpRequest, http::header::HeaderMap as ActixHeaderMap};
 use actix_web::http::header;
 
 use reqwest::{ClientBuilder, Url, header as request_header, Client, StatusCode};
@@ -14,7 +14,7 @@ use actix_web::{
 };
 
 use once_cell::sync::Lazy;
-use reqwest::header::{CONTENT_TYPE, HeaderName, USER_AGENT as USER_AGENT_HEADER_NAME};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, USER_AGENT as USER_AGENT_HEADER_NAME};
 use std::env;
 
 use lazy_static::lazy_static;
@@ -84,6 +84,14 @@ async fn index() -> &'static str {
 }
 
 #[routes]
+#[options("/generate")]
+#[head("/generate")]
+async fn generate_options_head(_req: HttpRequest) -> HttpResponse {
+    return HttpResponse::Ok()
+        .finish()
+}
+
+#[routes]
 #[options("/redirect")]
 #[head("/redirect")]
 async fn redirect_options_head(_req: HttpRequest) -> HttpResponse {
@@ -91,7 +99,33 @@ async fn redirect_options_head(_req: HttpRequest) -> HttpResponse {
         .finish()
 }
 
-fn generate_path(url: Url) -> String {
+#[get("/generate")]
+async fn generate(_req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpResponse {
+    let raw_url = &query.url;
+    if raw_url == "" {
+        return HttpResponse::BadRequest()
+            .body("An URL needs to be supplied.");
+    }
+
+    let decoded_url = decode(raw_url).expect("UTF-8");
+    let url = RustUrl::parse(&*decoded_url);
+
+    if url.is_err() {
+        return HttpResponse::BadRequest()
+            .body(format!("A valid URL needs to be supplied. {}", url.err().unwrap()));
+    }
+    let unwrapped_url = url.unwrap();
+    let host = unwrapped_url.host_str();
+
+    if host.is_some() && host.unwrap() == PROXY_HOST_NAME {
+        return HttpResponse::Forbidden()
+            .body("You cannot proxy an URL to itself. Do not try to break the server.");
+    }
+
+    return HttpResponse::Ok().body(generate_path(unwrapped_url, _req.headers().clone()));
+}
+
+fn generate_path(url: Url, headers: ActixHeaderMap) -> String {
     let mut raw_url = url.as_str();
 
     if raw_url.contains("?") { raw_url = raw_url.rsplit_once("?").unwrap().0; }
@@ -102,7 +136,20 @@ fn generate_path(url: Url) -> String {
 
     let query = raw_query.map(|q| q.to_string()).unwrap_or_default();
 
-    let meta = format!("{}{}", path, if query != "" { format!("?{}", query) } else { query });
+    let mut header_serialized = Builder::default();
+
+    for (header_name, header_value) in headers.clone() {
+        if IGNORED_HEADERS.contains(&header_name) { continue; }
+
+        // println!("{} {}", HeaderName::from_str(&*header_name_parsed).unwrap(), header_value.clone().to_str().unwrap());
+
+        header_serialized.append(urlencoding::encode(header_name.as_ref()).into_owned());
+        header_serialized.append(",");
+        header_serialized.append(urlencoding::encode(header_value.to_str().unwrap_or_default()).into_owned());
+        header_serialized.append("[]");
+    }
+
+    let meta = format!("{}@{}{}", path, header_serialized.string().unwrap_or_default(), if query != "" { format!("?{}", query) } else { query });
     let mut file_name = raw_file_name.to_owned();
 
     if file_name.contains("?") { file_name = file_name.split_once("?").unwrap().0.to_string() }
@@ -135,7 +182,7 @@ async fn redirect(_req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpRe
 
     return HttpResponse::MovedPermanently()
         .append_header((header::CACHE_CONTROL, "no-store"))
-        .append_header((header::LOCATION, generate_path(unwrapped_url)))
+        .append_header((header::LOCATION, generate_path(unwrapped_url, _req.headers().clone())))
         .finish()
 }
 
@@ -159,15 +206,19 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
     let supplied_unwrapped_meta = supplied_meta.unwrap();
     let decoded_meta = if !supplied_unwrapped_meta.contains("?") { (supplied_unwrapped_meta.as_str(), "") } else { supplied_unwrapped_meta.split_once("?").unwrap() };
-    let meta = decoded_meta.0;
+    let meta_raw = decoded_meta.0;
+    let (meta, headers_raw) = meta_raw.rsplit_once("@").unwrap_or_default();
+
     let raw_queries = decoded_meta.1;
     let file = req.match_info().get("file").unwrap();
     let queries = decode(raw_queries).expect("UTF-8");
 
-    let mut headers = request_header::HeaderMap::new();
+    let mut headers = HeaderMap::new();
     let mut force_agent = true;
 
-    let url = meta.to_owned() + "/" + file + "?" + &*queries;
+    let mut url = meta.to_owned() + "/" + file + "?" + &*queries;
+    if url.ends_with("?") { url.pop(); }
+
     let request_headers = req.headers();
     let parsed_url = Url::parse(&*url).unwrap();
 
@@ -202,11 +253,38 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         );
     }
 
-    /*
-    for (header_name, header_value) in headers.clone() {
-        println!("{} {}", header_name.unwrap(), header_value.to_str().unwrap());
+    let forwarding_raw_headers = headers_raw.split("[]");
+    for forwarding_raw_header in forwarding_raw_headers {
+        let (mut h, mut v) = forwarding_raw_header.split_once(",").unwrap_or_default();
+
+        if h.is_empty() || v.is_empty() { continue; }
+
+        let hrr = decode(h).unwrap_or_default();
+
+        let hr = match hrr.as_ref() {
+            "x-origin" => "origin",
+            "x-referer" => "referer",
+            "x-host" => "host",
+            h => &h
+        };
+
+        let vr = decode(v).unwrap_or_default();
+
+        // println!("{}={}", hr, vr);
+
+        if vr == "none" {
+            headers.remove(hr);
+        } else {
+            headers.insert(
+                HeaderName::from_str(&*hr).unwrap(),
+                HeaderValue::from_str(&*vr).unwrap()
+            );
+        }
     }
-     */
+
+    // for (header_name, header_value) in headers.clone() {
+        // println!("{}={}", header_name.unwrap(), header_value.to_str().unwrap());
+    //}
 
     if force_agent { headers.insert(USER_AGENT_HEADER_NAME, USER_AGENT.parse().unwrap()); }
 
@@ -214,7 +292,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
     let response = HTTP_CLIENT
         .get(url)
-        .headers(headers)
+        .headers(headers.clone())
         .send().await.unwrap();
 
     // println!("{}", response.text().await.unwrap());
@@ -238,12 +316,26 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
             // println!("{}", meta.to_string());
 
+            let mut forwarding_headers = ActixHeaderMap::new();
+            for (h, v) in headers.clone() {
+                let hc = h.unwrap().clone();
+                let hrr = hc.as_str();
+                let hr = match hrr {
+                    "origin" => "x-origin",
+                    "referer" => "x-referer",
+                    "host" => "x-host",
+                    h => &h
+                };
+
+                forwarding_headers.insert(hr.parse().unwrap(), v);
+            }
+
             let mut builder = Builder::default();
             for line in response_text.split("\n") {
                 if line.starts_with("#") {
                     if line.starts_with("#EXT-X-KEY") {
                         let key_url = between(line, "URI=\"", "\"");
-                        builder.append(line.replace(key_url, &*generate_path(Url::parse(key_url).unwrap())));
+                        builder.append(line.replace(key_url, &*generate_path(Url::parse(key_url).unwrap(), forwarding_headers.clone())));
                     } else {
                         builder.append(line);
                     }
@@ -257,7 +349,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
                         parsed_url = Url::parse(&*(meta.to_owned() + "/" + line)).unwrap();
                     }
 
-                    builder.append(generate_path(parsed_url));
+                    builder.append(generate_path(parsed_url, forwarding_headers.clone()));
                 }
 
                 builder.append("\n");
@@ -321,6 +413,8 @@ async fn main() -> std::io::Result<()> {
         .service(proxy_options_head)
         .service(redirect)
         .service(redirect_options_head)
+        .service(generate_options_head)
+        .service(generate)
         .wrap(Cors::default().allow_any_origin().allow_any_header().allow_any_method().supports_credentials())
     )
         .bind((if !cfg!(debug_assertions) { "0.0.0.0" } else { "127.0.0.1" }, 8000))?
