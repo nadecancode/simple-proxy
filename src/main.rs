@@ -37,7 +37,7 @@ static PROXY_HOST_NAME: &str = "cdn.nade.me";
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     ClientBuilder::new().build().unwrap()
 });
-static IGNORED_HEADERS: [HeaderName; 4] = [header::ORIGIN, header::REFERER, header::HOST, header::ACCEPT_ENCODING];
+static IGNORED_HEADERS: [HeaderName; 7] = [header::ORIGIN, header::REFERER, header::HOST, header::ACCEPT_ENCODING, header::ACCEPT_LANGUAGE, header::COOKIE, header::SET_COOKIE];
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
     if cfg!(debug_assertions) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }
 });
@@ -149,7 +149,9 @@ fn generate_path(url: Url, headers: ActixHeaderMap) -> String {
         let header_name = header_name_result.unwrap();
         let header_value = headers.get(header_name.clone()).unwrap();
 
-        if IGNORED_HEADERS.contains(&header_name) { continue; }
+        if IGNORED_HEADERS.contains(&header_name) || header_name.to_string().starts_with("sec") { continue; }
+
+        // println!("{} {}", header_name.clone(), header_value.clone().to_str().unwrap());
 
         header_serialized.append(urlencoding::encode(header_name.as_ref()).into_owned());
         header_serialized.append(",");
@@ -161,6 +163,8 @@ fn generate_path(url: Url, headers: ActixHeaderMap) -> String {
     let mut file_name = raw_file_name.to_owned();
 
     if file_name.contains("?") { file_name = file_name.split_once("?").unwrap().0.to_string() }
+
+    // println!("{}", meta);
 
     return format!("{}/file/{}/{}", REDIRECT_URL.as_str(), CRYPTO.encrypt_str_to_base64(meta).replace("/", "-"), file_name)
 }
