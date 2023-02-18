@@ -62,7 +62,6 @@ static ENCRYPTION_KEY: Lazy<String> = Lazy::new(|| {
         return key.unwrap();
     }
 
-
     rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(14)
@@ -138,10 +137,19 @@ fn generate_path(url: Url, headers: ActixHeaderMap) -> String {
 
     let mut header_serialized = Builder::default();
 
-    for (header_name, header_value) in headers.clone() {
-        if IGNORED_HEADERS.contains(&header_name) { continue; }
+    let mut vec = Vec::new();
+    for (header_name) in headers.clone().keys() {
+        vec.push(header_name.to_string());
+    }
 
-        // println!("{} {}", HeaderName::from_str(&*header_name_parsed).unwrap(), header_value.clone().to_str().unwrap());
+    vec.sort();
+
+    for (header_name_raw) in vec {
+        let header_name_result = HeaderName::from_str(header_name_raw.as_str());
+        let header_name = header_name_result.unwrap();
+        let header_value = headers.get(header_name.clone()).unwrap();
+
+        if IGNORED_HEADERS.contains(&header_name) { continue; }
 
         header_serialized.append(urlencoding::encode(header_name.as_ref()).into_owned());
         header_serialized.append(",");
