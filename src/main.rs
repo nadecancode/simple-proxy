@@ -37,7 +37,10 @@ static PROXY_HOST_NAME: &str = "cdn.nade.me";
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     ClientBuilder::new().build().unwrap()
 });
-static IGNORED_HEADERS: [HeaderName; 7] = [header::ORIGIN, header::REFERER, header::HOST, header::ACCEPT_ENCODING, header::ACCEPT_LANGUAGE, header::COOKIE, header::SET_COOKIE];
+static IGNORED_HEADERS: [HeaderName; 8] = [
+    header::ORIGIN, header::REFERER, header::HOST, header::ACCEPT_ENCODING, header::ACCEPT_LANGUAGE, header::COOKIE, header::SET_COOKIE,
+    HeaderName::from_static("x-real-ip")
+];
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
     if cfg!(debug_assertions) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }
 });
@@ -149,7 +152,9 @@ fn generate_path(url: Url, headers: ActixHeaderMap) -> String {
         let header_name = header_name_result.unwrap();
         let header_value = headers.get(header_name.clone()).unwrap();
 
-        if IGNORED_HEADERS.contains(&header_name) || header_name.to_string().starts_with("sec") { continue; }
+        let header_string = header_name.to_string();
+
+        if IGNORED_HEADERS.contains(&header_name) || header_string.starts_with("sec") || header_string.starts_with("cf") { continue; }
 
         // println!("{} {}", header_name.clone(), header_value.clone().to_str().unwrap());
 
