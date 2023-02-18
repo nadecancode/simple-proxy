@@ -164,7 +164,7 @@ fn generate_path(url: Url, headers: ActixHeaderMap) -> String {
 
     if file_name.contains("?") { file_name = file_name.split_once("?").unwrap().0.to_string() }
 
-    // println!("{}", meta);
+    println!("{}", meta);
 
     return format!("{}/file/{}/{}", REDIRECT_URL.as_str(), CRYPTO.encrypt_str_to_base64(meta).replace("/", "-"), file_name)
 }
