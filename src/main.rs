@@ -37,9 +37,11 @@ static PROXY_HOST_NAME: &str = "cdn.nade.me";
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     ClientBuilder::new().build().unwrap()
 });
-static IGNORED_HEADERS: [HeaderName; 8] = [
+static IGNORED_HEADERS: [HeaderName; 10] = [
     header::ORIGIN, header::REFERER, header::HOST, header::ACCEPT_ENCODING, header::ACCEPT_LANGUAGE, header::COOKIE, header::SET_COOKIE,
-    HeaderName::from_static("x-real-ip")
+    HeaderName::from_static("x-real-ip"),
+    HeaderName::from_static("x-forwarded-for"),
+    HeaderName::from_static("cdn-loop")
 ];
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
     if cfg!(debug_assertions) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }
