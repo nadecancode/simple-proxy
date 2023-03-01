@@ -37,12 +37,18 @@ static PROXY_HOST_NAME: &str = "cdn.nade.me";
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     ClientBuilder::new().build().unwrap()
 });
-static IGNORED_HEADERS: [HeaderName; 10] = [
+static IGNORED_HEADERS: [HeaderName; 15] = [
     header::ORIGIN, header::REFERER, header::HOST, header::ACCEPT_ENCODING, header::ACCEPT_LANGUAGE, header::COOKIE, header::SET_COOKIE,
     HeaderName::from_static("x-real-ip"),
     HeaderName::from_static("x-forwarded-for"),
-    HeaderName::from_static("cdn-loop")
+    HeaderName::from_static("cdn-loop"),
+    HeaderName::from_static("from"),
+    header::DNT,
+    header::FROM,
+    header::CONNECTION,
+    HeaderName::from_static("priority")
 ];
+
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
     if cfg!(debug_assertions) { "http://localhost:8000".to_string() } else { format!("https://{}", PROXY_HOST_NAME) }
 });
@@ -251,8 +257,15 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         }
     }
 
-    for (header_name, header_value) in request_headers {
-        if IGNORED_HEADERS.contains(header_name) { continue; }
+    /*
+    for (header_name_raw, header_value) in request_headers {
+        let header_name_result = HeaderName::from_str(header_name_raw.as_str());
+        let header_name = header_name_result.unwrap();
+        let header_value = headers.get(header_name.clone()).unwrap();
+
+        let header_string = header_name.to_string();
+
+        if IGNORED_HEADERS.contains(&header_name) || header_string.starts_with("sec") || header_string.starts_with("cf") { continue; }
 
         let header_name_raw = header_name.to_string().to_lowercase();
         let header_name_parsed = match header_name_raw.as_str() {
@@ -271,6 +284,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
             header_value.clone()
         );
     }
+     */
 
     let forwarding_raw_headers = headers_raw.split("[]");
     for forwarding_raw_header in forwarding_raw_headers {
