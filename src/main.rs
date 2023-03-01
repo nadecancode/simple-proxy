@@ -264,7 +264,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
         if header_name == header::USER_AGENT { force_agent = false; }
 
-        // println!("{} {}", HeaderName::from_str(&*header_name_parsed).unwrap(), header_value.clone().to_str().unwrap());
+        println!("{} {}", HeaderName::from_str(&*header_name_parsed).unwrap(), header_value.clone().to_str().unwrap());
 
         headers.insert(
             HeaderName::from_str(&*header_name_parsed).unwrap(),
