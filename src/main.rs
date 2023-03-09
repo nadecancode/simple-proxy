@@ -343,6 +343,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
     if content_type_header.is_some() {
         let content_type = content_type_header.unwrap().to_str().unwrap_or_default();
         let mut origin_error = false;
+        let mut bypass_cache = false;
 
         if content_type.contains(M3U8_CONTENT_TYPE) {
             let response_text = response.text().await.unwrap();
@@ -391,16 +392,19 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
             return http_response
                 .body(builder.string().unwrap())
         } else if content_type.contains(HTML_CONTENT_TYPE) {
-            origin_error = true;
+            bypass_cache = true;
         } else if file.ends_with(".m3u8") && !content_type.contains(M3U8_CONTENT_TYPE) {
             origin_error = true;
+            bypass_cache = true;
         }
 
-        if origin_error {
+        if bypass_cache {
             http_response.insert_header((request_header::CACHE_CONTROL, "no-store"));
             http_response.insert_header(("CDN-Cache-Control", "no-store"));
             http_response.insert_header(("Cloudflare-CDN-Cache-Control", "no-store"));
-            http_response.status(StatusCode::FORBIDDEN); // Prevent 200 status code with 403 content..
+            if origin_error {
+                http_response.status(StatusCode::FORBIDDEN); // Prevent 200 status code with 403 content..
+            }
         }
     }
 
