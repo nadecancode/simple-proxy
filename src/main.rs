@@ -14,7 +14,7 @@ use actix_web::{
 };
 
 use once_cell::sync::Lazy;
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, USER_AGENT as USER_AGENT_HEADER_NAME};
+use reqwest::header::{ORIGIN, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, USER_AGENT as USER_AGENT_HEADER_NAME};
 use std::env;
 
 use lazy_static::lazy_static;
@@ -323,6 +323,15 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
     // println!("{}", url);
 
+    let mut leecher = false;
+
+    if req.uri().path().ends_with(".m3u8") {
+        if req.headers().get(ORIGIN).is_none() || req.headers().get(ORIGIN).unwrap() != "https://enime.moe" {
+            url = "https://raw.githubusercontent.com/NADESHIKON/rick-roll-hls/master/roll.m3u8".parse().unwrap();
+            leecher = true;
+        }
+    }
+
     let response = HTTP_CLIENT
         .get(url)
         .headers(headers.clone())
@@ -345,7 +354,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
         let mut origin_error = false;
         let mut bypass_cache = false;
 
-        if content_type.contains(M3U8_CONTENT_TYPE) {
+        if content_type.contains(M3U8_CONTENT_TYPE) || leecher {
             let response_text = response.text().await.unwrap();
 
             // println!("{}", meta.to_string());
@@ -379,6 +388,8 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
                     if is_url(line) {
                         parsed_url = Url::parse(line).unwrap();
+                    } else if leecher {
+                        parsed_url = Url::parse(&*("https://github.com/NADESHIKON/rick-roll-hls/raw/master/".to_owned() + line)).unwrap()
                     } else {
                         parsed_url = Url::parse(&*(meta.to_owned() + "/" + line)).unwrap();
                     }
@@ -402,7 +413,7 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
             http_response.insert_header((request_header::CACHE_CONTROL, "no-store"));
             http_response.insert_header(("CDN-Cache-Control", "no-store"));
             http_response.insert_header(("Cloudflare-CDN-Cache-Control", "no-store"));
-            if origin_error {
+            if origin_error && !leecher {
                 http_response.status(StatusCode::FORBIDDEN); // Prevent 200 status code with 403 content..
             }
         }
