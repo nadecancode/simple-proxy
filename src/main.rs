@@ -325,12 +325,14 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
     let mut leecher = false;
 
+    /*
     if req.uri().path().ends_with(".m3u8") {
         if req.headers().get(ORIGIN).is_none() || req.headers().get(ORIGIN).unwrap() != "https://enime.moe" {
             url = "https://raw.githubusercontent.com/NADESHIKON/rick-roll-hls/master/roll.m3u8".parse().unwrap();
             leecher = true;
         }
     }
+     */
 
     let response = HTTP_CLIENT
         .get(url)
