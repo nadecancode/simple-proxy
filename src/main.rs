@@ -16,6 +16,7 @@ use actix_web::{
 use once_cell::sync::Lazy;
 use reqwest::header::{ORIGIN, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, USER_AGENT as USER_AGENT_HEADER_NAME};
 use std::env;
+use actix_web::http::header::REFERER;
 
 use lazy_static::lazy_static;
 use rand::distributions::Alphanumeric;
@@ -325,14 +326,14 @@ async fn proxy(req: HttpRequest) -> HttpResponse {
 
     let mut leecher = false;
 
-    /*
+
     if req.uri().path().ends_with(".m3u8") {
-        if req.headers().get(ORIGIN).is_none() || req.headers().get(ORIGIN).unwrap() != "https://enime.moe" {
+        if req.headers().get(REFERER).is_none() || !req.headers().get(REFERER).unwrap().to_str().unwrap().contains("enime.moe") {
             url = "https://raw.githubusercontent.com/NADESHIKON/rick-roll-hls/master/roll.m3u8".parse().unwrap();
             leecher = true;
         }
     }
-     */
+
 
     let response = HTTP_CLIENT
         .get(url)
