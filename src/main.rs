@@ -38,7 +38,7 @@ static PROXY_HOST_NAME: &str = "cdn.nade.me";
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     ClientBuilder::new().build().unwrap()
 });
-static IGNORED_HEADERS: [HeaderName; 15] = [
+static IGNORED_HEADERS: [HeaderName; 16] = [
     header::ORIGIN, header::REFERER, header::HOST, header::ACCEPT_ENCODING, header::ACCEPT_LANGUAGE, header::COOKIE, header::SET_COOKIE,
     HeaderName::from_static("x-real-ip"),
     HeaderName::from_static("x-forwarded-for"),
@@ -47,7 +47,8 @@ static IGNORED_HEADERS: [HeaderName; 15] = [
     header::DNT,
     header::FROM,
     header::CONNECTION,
-    HeaderName::from_static("priority")
+    HeaderName::from_static("priority"),
+    HeaderName::from_static("x-api-key")
 ];
 
 static REDIRECT_URL: Lazy<String> = Lazy::new(|| {
@@ -69,6 +70,20 @@ static CRYPTO: Lazy<MagicCrypt256> = Lazy::new(|| {
 
 static ENCRYPTION_KEY: Lazy<String> = Lazy::new(|| {
     let key = env::var("key");
+
+    if key.is_ok() {
+        return key.unwrap();
+    }
+
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(14)
+        .map(char::from)
+        .collect()
+});
+
+static API_KEY: Lazy<String> = Lazy::new(|| {
+    let key = env::var("apikey");
 
     if key.is_ok() {
         return key.unwrap();
@@ -111,7 +126,14 @@ async fn redirect_options_head(_req: HttpRequest) -> HttpResponse {
 }
 
 #[get("/generate")]
-async fn generate(_req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpResponse {
+async fn generate(req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpResponse {
+    let api_key = req.headers().get("x-api-key");
+
+    if (api_key.is_none() || api_key.unwrap() != API_KEY.as_str()) {
+        return HttpResponse::Forbidden()
+            .body("Invalid Key")
+    }
+
     let raw_url = &query.url;
     if raw_url == "" {
         return HttpResponse::BadRequest()
@@ -133,7 +155,7 @@ async fn generate(_req: HttpRequest, query: web::Query<RedirectQuery>) -> HttpRe
             .body("You cannot proxy an URL to itself. Do not try to break the server.");
     }
 
-    return HttpResponse::Ok().body(generate_path(unwrapped_url, _req.headers().clone()));
+    return HttpResponse::Ok().body(generate_path(unwrapped_url, req.headers().clone()));
 }
 
 fn generate_path(url: Url, headers: ActixHeaderMap) -> String {
